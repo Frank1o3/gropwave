@@ -15,7 +15,7 @@ Open the GropWave sidebar from the activity bar and start chatting with the AI a
 - **Streaming responses** — tokens appear in real-time as the model generates them
 - **Markdown rendering** — code blocks, headers, lists, links, tables, and more
 - **Model selector** — choose a specific model or use **Auto** for smart routing
-- **Quota badge** — shows the health of your selected model's API usage (🟢 Healthy / 🟡 Warning / 🔴 Exhausted)
+- **Quota badge** — shows the health of your selected model's API usage (🟢 Healthy / 🟡 Warning / 🔴 Exhausted) (currently implementing)
 
 ### 🧠 Smart Orchestration
 
