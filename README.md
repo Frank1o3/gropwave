@@ -48,7 +48,7 @@ As you edit files, GropWave tracks your cursor position, enclosing class, and fu
 
 This context is injected into every AI call, so you can ask "what does this function do?" and the AI knows exactly which function you mean.
 
-### 🛠️ Agentic Tool Use
+### 🛠️ Agentic Tool Use (planned to be implemented)
 
 The AI can execute commands and edit files on your behalf using XML-style tool tags:
 
@@ -61,7 +61,7 @@ The AI can execute commands and edit files on your behalf using XML-style tool t
 - **Safe file editing** — all edits go through `vscode.WorkspaceEdit`, integrating with VS Code's undo/redo stack
 - **Command safety** — dangerous commands (`rm -rf`, `dd`, `mkfs`, destructive `sudo`) are blocked automatically
 
-### 📊 Status Bar Indicator
+### 📊 Status Bar Indicator (planned to be implemented)
 
 The VS Code status bar shows GropWave's state at a glance: the current model name and quota health. Click it to focus the chat sidebar.
 
@@ -92,8 +92,6 @@ Type a message and press Enter. The AI will automatically select the best model 
 | Command | Description |
 |---|---|
 | `/index` | Scan your workspace and generate `context.md` with per-file summaries |
-| `/what` | Show what file/function you're currently editing |
-| `/what does this do?` | Ask the AI about the function/class you're editing |
 | `/help` | Show available commands and tips |
 
 ---
