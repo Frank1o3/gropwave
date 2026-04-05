@@ -90,6 +90,7 @@
 ## Implemented Features
 
 ### 1. Webview Sidebar
+
 - **Model selector** with `<optgroup>` by tier (Fast / Balanced / Heavy)
 - **Quota badge** showing Healthy / Warning / Exhausted with VS Code theme colors
 - **Streaming chat** — tokens appear in real-time as the LLM generates them
@@ -98,6 +99,7 @@
 - **Conversation history restoration** — messages replayed from globalState when sidebar reopens
 
 ### 2. Smart Orchestration & Quota Management
+
 - **Three-tier model routing**: Fast (8B, mini → 500k TPD), Balanced (13B-34B), Heavy (70B+ → 100k TPD)
 - **Heuristic classification**: keyword patterns, prompt length, code block detection, terminal output detection
 - **Fallback chains**: Heavy → Balanced → Fast (and permutations based on preferred tier)
@@ -107,6 +109,7 @@
 - **DEFAULT_MODEL_LIMITS map**: per-model RPM/RPD/TPM/TPD defaults for known Groq models
 
 ### 3. Context Engine (`context.md`)
+
 - **LLM-powered indexing**: llama-3.1-8b-instant summarizes each file's purpose, key elements, dependencies
 - **JSON-structured summaries**: `{purpose, keyElements, dependencies}` per file
 - **Batched parallel processing**: 5 files at a time with progress reporting
@@ -116,6 +119,7 @@
 - **Markdown output**: file structure overview + detailed per-file sections
 
 ### 4. Dynamic System Prompts (`system.md`)
+
 - **Section parsing**: `##` headers define independent sections
 - **Keyword extraction**: stopword-filtered, length-sorted keywords per section
 - **Selective feeding**: scores sections by keyword overlap with user prompt + context
@@ -124,6 +128,7 @@
 - **Auto-reload on file change**: FileSystemWatcher triggers `reload()`
 
 ### 5. Agentic Capabilities & Tool Use
+
 - **Tool-call syntax**: `<tool:run_command>cmd</tool:run_command>` and `<tool:edit_file path="...">content</tool:edit_file>`
 - **Tool preamble injection**: always prepended to system message so LLM knows about tools
 - **Auto-execution loop**: tool calls detected → executed → results fed back → LLM summarizes
@@ -131,12 +136,14 @@
 - **WorkspaceEdit file editing**: goes through VS Code's undo/redo stack, triggers language server events
 
 ### 6. Status Bar
+
 - Shows: `✓ GropWave: llama-3.1-8b` (or ⚠/✗ for warnings/exhaustion)
 - "Loading…" during initialization
 - Click focuses the chat view
 - Listens to orchestrator events for real-time updates
 
 ### 7. Persistence
+
 - **Conversation history**: saved to `ExtensionContext.globalState` after every turn
 - **Restored on initialize**: history loaded from globalState during startup
 - **Restored in UI**: ChatViewProvider replays history messages into webview DOM on resolve
@@ -146,21 +153,27 @@
 ## Key Design Decisions
 
 ### Quota Tracking: Sliding Window vs Simple Counters
+
 Each request logs a `{timestamp, tokens}` entry. On each check, entries outside the window are pruned. This gives accurate RPM/TPM (60s) and RPD/TPD (24h) counts without over-counting.
 
 ### Heuristic Routing (No LLM Call)
+
 TaskRouter uses keyword matching and token estimation — no API call needed for routing decisions. This keeps routing fast and free.
 
 ### Tool Calls: XML Tags vs Function Calling
+
 Uses `<tool:...>` XML tags instead of Groq's function calling. Pros: works with any model, no schema registration, easily parsable. Cons: relies on LLM following instructions.
 
 ### System Prompt: Selective Feeding
+
 Instead of sending entire system.md, only relevant sections are extracted via keyword overlap scoring. Saves tokens, especially for large system.md files.
 
 ### Context Updates: Debounced Per-File
+
 File watcher fires on every save. 2-second debounce coalesces rapid saves. `activeUpdates` set prevents concurrent LLM calls for the same file. If a file changes during processing, it's re-scheduled.
 
 ### Default Model Limits
+
 `DEFAULT_MODEL_LIMITS` in ModelRegistry maps known model IDs to their rate limits. Falls back to conservative defaults for unknown models. Adjustable via `setLimits()` at runtime.
 
 ---
