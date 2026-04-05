@@ -1,0 +1,126 @@
+{
+  "name": "gropwave",
+  "displayName": "GropWave",
+  "description": "An agentic AI extension for using AI models Qrop hosts while you code",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.110.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gropwave.focusChat",
+        "title": "Focus GropWave Chat",
+        "category": "GropWave"
+      },
+      {
+        "command": "gropwave.indexWorkspace",
+        "title": "Index Workspace (generate context.md)",
+        "category": "GropWave"
+      },
+      {
+        "command": "gropwave.refreshModels",
+        "title": "Refresh Available Models",
+        "category": "GropWave"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gropwave-sidebar",
+          "title": "GropWave",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
+    "views": {
+      "gropwave-sidebar": [
+        {
+          "type": "webview",
+          "id": "gropwave.chatView",
+          "name": "AI Chat",
+          "contextualTitle": "GropWave Assistant"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "GropWave",
+      "properties": {
+        "gropwave.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for the AI provider (leave empty to use GROQ_API_KEY env var)",
+          "format": "password"
+        },
+        "gropwave.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Custom base URL for the API endpoint (optional)"
+        },
+        "gropwave.defaultModel": {
+          "type": "string",
+          "default": "auto",
+          "description": "Default model to use. 'auto' enables smart routing."
+        },
+        "gropwave.quotaWarningThreshold": {
+          "type": "number",
+          "default": 0.9,
+          "minimum": 0.5,
+          "maximum": 1.0,
+          "description": "Threshold (0-1) at which to warn about quota usage"
+        },
+        "gropwave.contextFile": {
+          "type": "string",
+          "default": "context.md",
+          "description": "Filename for the workspace context file"
+        },
+        "gropwave.systemFile": {
+          "type": "string",
+          "default": "system.md",
+          "description": "Filename for the system instructions file"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "overrides": {
+    "serialize-javascript": "^7.0.5",
+    "diff": "^8.0.3"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "25.x",
+    "@types/vscode": "^1.110.0",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.28.0",
+    "eslint": "^10.2.0",
+    "mocha": "^11.7.5",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.0"
+  },
+  "dependencies": {
+    "groq-sdk": "^1.1.2"
+  }
+}
