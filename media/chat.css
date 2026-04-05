@@ -1,0 +1,245 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  padding: 0;
+  margin: 0;
+  font-family: var(--vscode-font-family);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ─── Model selector bar ─────────────────────────────── */
+
+.model-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-size: 12px;
+}
+
+.model-bar select {
+  flex: 1;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.quota-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.quota-badge.warning {
+  background: var(--vscode-editorWarning-background);
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.quota-badge.exhausted {
+  background: var(--vscode-inputValidation-errorBackground);
+  color: var(--vscode-inputValidation-errorForeground);
+}
+
+/* ─── Active file bar ──────────────────────────────────── */
+
+.active-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#activeContextDisplay {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Chat area ──────────────────────────────────────── */
+
+.chat-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.message {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message.user {
+  background: var(--vscode-input-background);
+}
+
+.message.assistant {
+  background: var(--vscode-editor-inactiveSelectionBackground);
+}
+
+.message .label {
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.message .model-tag {
+  font-size: 10px;
+  opacity: 0.5;
+  margin-top: 4px;
+}
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  opacity: 0.5;
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+
+/* ─── Input area ─────────────────────────────────────── */
+
+.input-area {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.input-area textarea {
+  flex: 1;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  padding: 8px;
+  resize: none;
+  font-family: var(--vscode-font-family);
+  font-size: 13px;
+  min-height: 40px;
+  max-height: 120px;
+}
+
+.input-area textarea:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+.input-area button {
+  align-self: flex-end;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.input-area button:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.input-area button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Markdown rendering ─────────────────────────────── */
+
+.message code {
+  background: var(--vscode-textCodeBlock-background);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+}
+
+.message pre code {
+  display: block;
+  padding: 8px;
+  overflow-x: auto;
+}
+
+.message strong {
+  font-weight: 600;
+}
+
+.message h2,
+.message h3,
+.message h4 {
+  margin: 8px 0 4px;
+}
+
+.message ul,
+.message ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.message blockquote {
+  margin: 4px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--vscode-textLink-foreground);
+  opacity: 0.8;
+}
+
+.message hr {
+  border: none;
+  border-top: 1px solid var(--vscode-panel-border);
+  margin: 8px 0;
+}
+
+.message a {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+}
+
+.message a:hover {
+  text-decoration: underline;
+}
+
+.message img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+.message table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 4px 0;
+}
+
+.message td {
+  border: 1px solid var(--vscode-panel-border);
+  padding: 4px 8px;
+}

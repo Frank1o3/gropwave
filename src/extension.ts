@@ -1,3 +1,13 @@
+// Suppress punycode deprecation warning from Groq SDK dependencies
+// Must run before any import that pulls in the groq-sdk
+process.removeAllListeners("warning");
+process.on("warning", (warning) => {
+	if (!warning.message?.includes("punycode")) {
+		 
+		console.warn(warning);
+	}
+});
+
 import * as vscode from "vscode";
 import { OrchestratorCore, OrchestratorConfig } from "./orchestrator";
 import { ChatViewProvider } from "./webview/ChatViewProvider";
@@ -5,15 +15,22 @@ import { ContextEngine, LLMProvider } from "./context-engine/ContextEngine";
 import { SystemPromptEngine } from "./context-engine/SystemPromptEngine";
 import { GroqClient } from "./orchestrator/GroqClient";
 import { StatusBar } from "./status/StatusBar";
+import { ActiveFileTracker } from "./active-context/ActiveFileTracker";
 
 let orchestrator: OrchestratorCore | undefined;
 let contextEngine: ContextEngine | undefined;
 let systemPromptEngine: SystemPromptEngine | undefined;
 let groqClient: GroqClient | undefined;
 let statusBar: StatusBar | undefined;
+let outputChannel: vscode.OutputChannel | undefined;
+let activeFileTracker: ActiveFileTracker | undefined;
 
 export function activate(extensionContext: vscode.ExtensionContext) {
-	console.log("GropWave extension is now active");
+	// ─── Output channel ────────────────────────────────────────────────
+	outputChannel = vscode.window.createOutputChannel("GropWave", "log");
+	outputChannel.appendLine("=".repeat(60));
+	outputChannel.appendLine("GropWave extension activated");
+	extensionContext.subscriptions.push(outputChannel);
 
 	// ─── Read configuration ──────────────────────────────────────────────
 	const config = vscode.workspace.getConfiguration("gropwave");
@@ -27,16 +44,18 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 	};
 
 	if (!orchestratorConfig.apiKey) {
+		outputChannel!.appendLine("[Config] WARNING: No API key configured");
 		vscode.window.showWarningMessage(
 			"GropWave: No API key configured. Set `gropwave.apiKey` in settings or define GROQ_API_KEY.",
 		);
+	} else {
+		outputChannel!.appendLine("[Config] API key configured ✓");
 	}
 
 	// ─── Create GroqClient and LLMProvider adapter ───────────────────────
 	groqClient = new GroqClient(orchestratorConfig);
 	const llmProvider: LLMProvider = {
 		async complete(systemPrompt: string, userPrompt: string): Promise<string> {
-			// Use a fast model for summarization tasks
 			return groqClient!.complete("llama-3.1-8b-instant", [
 				{ role: "system", content: systemPrompt },
 				{ role: "user", content: userPrompt },
@@ -45,7 +64,6 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 	};
 
 	// ─── Initialize context engine ───────────────────────────────────────
-	// Auto-generate system.md if it doesn't exist
 	SystemPromptEngine.ensureDefaultExists(orchestratorConfig).then((created) => {
 		if (created) {
 			vscode.window.showInformationMessage(
@@ -56,23 +74,26 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		console.warn("[GropWave] Failed to ensure system.md:", err);
 	});
 
-	contextEngine = new ContextEngine(extensionContext, orchestratorConfig, llmProvider);
+	contextEngine = new ContextEngine(extensionContext, orchestratorConfig, llmProvider, outputChannel);
 	systemPromptEngine = new SystemPromptEngine(orchestratorConfig);
 
 	// ─── Initialize orchestrator ─────────────────────────────────────────
 	orchestrator = new OrchestratorCore(orchestratorConfig, extensionContext, {
 		systemPromptEngine,
 		contextEngine,
+		activeFileTracker,
 	});
 	orchestrator.initialize().then(() => {
+		outputChannel?.appendLine("[Init] Orchestrator initialized ✓");
 		statusBar?.setReady(true);
 	}).catch((err) => {
+		outputChannel?.appendLine(`[Init] Failed: ${String(err)}`);
 		console.error("[GropWave] Failed to initialize orchestrator:", err);
 	});
 
 	// ─── Status bar ──────────────────────────────────────────────────────
 	statusBar = new StatusBar(extensionContext, orchestrator);
-	statusBar.setReady(false); // will be set true after initialize completes
+	statusBar.setReady(false);
 	statusBar.show();
 
 	// Apply user's default model preference
@@ -81,10 +102,14 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 	}
 
 	// ─── Register webview view provider ──────────────────────────────────
+	activeFileTracker = ActiveFileTracker.createAndAttach(extensionContext);
+
 	const chatViewProvider = new ChatViewProvider(
 		extensionContext.extensionUri,
 		orchestrator,
 		contextEngine,
+		outputChannel,
+		activeFileTracker,
 	);
 	extensionContext.subscriptions.push(
 		vscode.window.registerWebviewViewProvider("gropwave.chatView", chatViewProvider),
@@ -126,13 +151,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 
 	// ─── File watchers ───────────────────────────────────────────────────
 
-	// Watch for saved source files and update context.md incrementally
 	const fileWatcher = vscode.workspace.onDidSaveTextDocument(async (doc) => {
 		const engine = contextEngine;
 		if (!engine) {
 			return;
 		}
-		// Skip context.md itself and non-file documents
 		if (doc.uri.scheme !== "file") {
 			return;
 		}
@@ -140,7 +163,6 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		if (contextPath && doc.uri.fsPath === contextPath) {
 			return;
 		}
-		// Debounce: small delay to batch rapid saves
 		setTimeout(() => {
 			try {
 				engine.updateFile(doc.uri.fsPath);
@@ -150,7 +172,6 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		}, 1000);
 	});
 
-	// Watch for system.md changes and reload the engine
 	const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 	let systemWatcher: vscode.FileSystemWatcher | undefined;
 	if (workspaceRoot) {
@@ -159,7 +180,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 		systemWatcher.onDidChange(() => {
 			if (systemPromptEngine) {
 				systemPromptEngine.reload();
-				console.log("[GropWave] Reload system.md");
+				outputChannel?.appendLine("[Watch] Reloaded system.md");
 			}
 		});
 	}
@@ -171,9 +192,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
+	outputChannel?.appendLine("GropWave extension deactivated");
 	orchestrator = undefined;
 	contextEngine = undefined;
 	systemPromptEngine = undefined;
 	groqClient = undefined;
 	statusBar = undefined;
+	outputChannel = undefined;
+	activeFileTracker = undefined;
 }

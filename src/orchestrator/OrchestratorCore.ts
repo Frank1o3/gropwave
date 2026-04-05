@@ -26,6 +26,7 @@ import { GroqClient } from "./GroqClient";
 import { SystemPromptEngine } from "../context-engine/SystemPromptEngine";
 import { ContextEngine } from "../context-engine/ContextEngine";
 import { parseToolCalls, executeToolCalls, ParsedToolCall } from "../tools/AgentTools";
+import { ActiveFileTracker } from "../active-context/ActiveFileTracker";
 
 // ─── Tier ordering for fallback ──────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ export class OrchestratorCore {
 	/** Optional engines for context/system prompt extraction. */
 	private systemPromptEngine?: SystemPromptEngine;
 	private contextEngine?: ContextEngine;
+	private activeFileTracker?: ActiveFileTracker;
 
 	/** Extension context for state persistence. */
 	private extensionContext: vscode.ExtensionContext;
@@ -62,17 +64,8 @@ export class OrchestratorCore {
 	/** The model used for the most recent dispatch (for UI display). */
 	private lastUsedModel: string = "";
 
-	/** Conversation history for multi-turn chat. */
-	private conversationHistory: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
-
-	/** Maximum conversation turns to keep in history (to control token usage). */
-	private maxHistoryTurns = 20;
-
 	/** Whether initialize() has completed. Dispatch is blocked until true. */
 	private initialized = false;
-
-	/** Storage key for persisted conversation history. */
-	private static readonly HISTORY_KEY = "gropwave.conversationHistory";
 
 	/** Event emitters for UI updates. */
 	private onModelsChangeEmitter: vscode.EventEmitter<RegisteredModel[]>;
@@ -84,6 +77,7 @@ export class OrchestratorCore {
 		dependencies?: {
 			systemPromptEngine?: SystemPromptEngine;
 			contextEngine?: ContextEngine;
+			activeFileTracker?: ActiveFileTracker;
 		},
 	) {
 		this.config = config;
@@ -96,6 +90,7 @@ export class OrchestratorCore {
 
 		this.systemPromptEngine = dependencies?.systemPromptEngine;
 		this.contextEngine = dependencies?.contextEngine;
+		this.activeFileTracker = dependencies?.activeFileTracker;
 
 		this.onModelsChangeEmitter = new vscode.EventEmitter<RegisteredModel[]>();
 		this.onQuotaChangeEmitter = new vscode.EventEmitter<Map<string, ModelQuotaStatus>>();
@@ -126,9 +121,6 @@ export class OrchestratorCore {
 		if (this.systemPromptEngine) {
 			this.systemPromptEngine.load();
 		}
-
-		// Restore persisted conversation history
-		this.loadHistory();
 
 		await this.modelRegistry.refresh();
 		this.onModelsChangeEmitter.fire(this.modelRegistry.getModels());
@@ -165,25 +157,6 @@ export class OrchestratorCore {
 		return this.modelRegistry.getModels();
 	}
 
-	/** Clear the conversation history. */
-	clearHistory(): void {
-		this.conversationHistory = [];
-		this.saveHistory();
-	}
-
-	/** Get the conversation history (for UI restoration). */
-	getHistory(): Array<{ role: "user" | "assistant"; content: string }> {
-		return this.conversationHistory.filter(
-			(m): m is { role: "user" | "assistant"; content: string } =>
-				m.role === "user" || m.role === "assistant",
-		);
-	}
-
-	/** Set the max number of conversation turns to retain. */
-	setMaxHistoryTurns(n: number): void {
-		this.maxHistoryTurns = Math.max(2, n);
-	}
-
 	// ─── Main dispatch ───────────────────────────────────────────────────────
 
 	/**
@@ -211,7 +184,7 @@ export class OrchestratorCore {
 		// 1. Classify the task
 		const task = this.taskRouter.classify(prompt);
 
-		// 2. Build the full message list: system + context + history + user
+		// 2. Build the full message list: system + context + active file + history + user
 		const messages = this.buildMessagesWithHistory(prompt);
 
 		// 3. Select model (smart routing or explicit)
@@ -241,12 +214,6 @@ export class OrchestratorCore {
 			// Execute tools and feed results back for a follow-up
 			response = await this.handleToolCalls(toolCalls, messages, modelId, onChunk);
 		}
-
-		// 7. Append to conversation history
-		this.appendHistory("user", prompt);
-		this.appendHistory("assistant", response);
-		this.trimHistory();
-		this.saveHistory();
 
 		return response;
 	}
@@ -391,11 +358,13 @@ export class OrchestratorCore {
 			});
 		}
 
-		// 3. Conversation history (prior turns)
-		messages.push(...this.conversationHistory);
-
-		// 4. Current user prompt
-		messages.push({ role: "user", content: userPrompt });
+		// 3. Current user prompt — with active file context prepended for prominence
+		let finalPrompt = userPrompt;
+		const activeContextStr = this.activeFileTracker?.getActiveContext();
+		if (activeContextStr) {
+			finalPrompt = `[Currently editing: ${activeContextStr}]\n\n${userPrompt}`;
+		}
+		messages.push({ role: "user", content: finalPrompt });
 
 		return messages;
 	}
@@ -415,46 +384,6 @@ export class OrchestratorCore {
 			return "";
 		}
 		return this.contextEngine.readContext();
-	}
-
-	/** Append a message to conversation history. */
-	private appendHistory(role: "user" | "assistant", content: string): void {
-		this.conversationHistory.push({ role, content });
-	}
-
-	/** Trim history to stay within token limits. */
-	private trimHistory(): void {
-		const maxMessages = this.maxHistoryTurns * 2; // user + assistant per turn
-		while (this.conversationHistory.length > maxMessages) {
-			this.conversationHistory.shift();
-			this.conversationHistory.shift();
-		}
-	}
-
-	/** Save conversation history to globalState. */
-	private saveHistory(): void {
-		try {
-			this.extensionContext.globalState.update(
-				OrchestratorCore.HISTORY_KEY,
-				this.conversationHistory,
-			);
-		} catch (err) {
-			console.warn("[GropWave] Failed to save conversation history:", err);
-		}
-	}
-
-	/** Restore conversation history from globalState. */
-	private loadHistory(): void {
-		try {
-			const saved = this.extensionContext.globalState.get<Array<{ role: "system" | "user" | "assistant"; content: string }>>(
-				OrchestratorCore.HISTORY_KEY,
-			);
-			if (saved && Array.isArray(saved)) {
-				this.conversationHistory = saved;
-			}
-		} catch (err) {
-			console.warn("[GropWave] Failed to load conversation history:", err);
-		}
 	}
 
 	// ─── Internal: emit quota status event ───────────────────────────────────

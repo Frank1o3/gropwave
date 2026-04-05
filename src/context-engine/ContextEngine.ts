@@ -45,6 +45,7 @@ export class ContextEngine {
 	private config: OrchestratorConfig;
 	private context: vscode.ExtensionContext;
 	private llm?: LLMProvider;
+	private outputChannel?: vscode.OutputChannel;
 
 	/** Debounce: pending file paths waiting for the next debounce window. */
 	private pendingUpdates = new Map<string, NodeJS.Timeout>();
@@ -52,10 +53,16 @@ export class ContextEngine {
 	/** Debounce: files currently being processed by an in-flight LLM call. */
 	private activeUpdates = new Set<string>();
 
-	constructor(context: vscode.ExtensionContext, config: OrchestratorConfig, llm?: LLMProvider) {
+	constructor(
+		context: vscode.ExtensionContext,
+		config: OrchestratorConfig,
+		llm?: LLMProvider,
+		outputChannel?: vscode.OutputChannel,
+	) {
 		this.context = context;
 		this.config = config;
 		this.llm = llm;
+		this.outputChannel = outputChannel;
 	}
 
 	/** Allow the LLM provider to be set after construction. */
@@ -124,21 +131,17 @@ export class ContextEngine {
 			return summary;
 		}
 
-		// Batch files into groups of 5 for parallel summarization
-		const batchSize = 5;
+		// Sequential summarization with rate-limit retries
+		// Parallel calls blow past the 6000 TPM limit on the free tier
 		const allSummaries: FileSummary[] = [];
 
-		for (let i = 0; i < files.length; i += batchSize) {
-			const batch = files.slice(i, i + batchSize);
-			const summaries = await Promise.all(
-				batch.map((filePath) => this.summarizeFile(filePath, workspaceRoot)),
-			);
-			allSummaries.push(...summaries);
+		for (let i = 0; i < files.length; i++) {
+			const summary = await this.summarizeWithRetry(files[i], workspaceRoot);
+			allSummaries.push(summary);
 
 			// Report progress
-			const progress = Math.min(i + batchSize, files.length);
 			vscode.window.setStatusBarMessage(
-				`Indexing: ${progress}/${files.length} files`,
+				`Indexing: ${i + 1}/${files.length} files`,
 				2000,
 			);
 		}
@@ -253,9 +256,72 @@ export class ContextEngine {
 
 	/**
 	 * Read a file's content and use the LLM to generate a structured summary.
+	 * Retries on rate-limit errors with exponential backoff.
+	 */
+	private async summarizeWithRetry(absolutePath: string, workspaceRoot: string, maxRetries = 3): Promise<FileSummary> {
+		let lastErr: unknown;
+		for (let attempt = 0; attempt < maxRetries; attempt++) {
+			try {
+				return await this.summarizeFile(absolutePath, workspaceRoot);
+			} catch (err: unknown) {
+				lastErr = err;
+				const msg = String(err);
+				// Detect rate-limit errors (429 or "rate_limit_exceeded")
+				if (msg.includes("429") || msg.includes("rate_limit_exceeded")) {
+					// Extract retry delay from message if available
+					const delayMatch = msg.match(/try again in\s+([\d.]+)s/i);
+					const delay = delayMatch
+						? Math.ceil(parseFloat(delayMatch[1]) * 1000)
+						: (2 ** attempt) * 2000; // exponential backoff: 2s, 4s, 8s
+					this.outputChannel?.appendLine(
+						`[Index] Rate limited on ${vscode.workspace.asRelativePath(absolutePath)}, retrying in ${(delay / 1000).toFixed(1)}s (attempt ${attempt + 1}/${maxRetries})`,
+					);
+					await new Promise((r) => setTimeout(r, delay));
+					continue;
+				}
+				// Non-rate-limit error — don't retry
+				throw err;
+			}
+		}
+		// All retries exhausted
+		const relativePath = path.relative(workspaceRoot, absolutePath);
+		this.outputChannel?.appendLine(`[Index] Giving up on ${relativePath} after ${maxRetries} retries`);
+		return {
+			relativePath,
+			purpose: `Rate-limited after ${maxRetries} retries: ${String(lastErr).slice(0, 120)}`,
+			keyElements: [],
+			dependencies: [],
+		};
+	}
+
+	/**
+	 * Read a file's content and use the LLM to generate a structured summary.
 	 */
 	private async summarizeFile(absolutePath: string, workspaceRoot: string): Promise<FileSummary> {
 		const relativePath = path.relative(workspaceRoot, absolutePath);
+
+		// Skip files larger than 30KB to avoid hitting token limits
+		const maxFileSize = 30 * 1024; // 30KB
+		let stats: fs.Stats;
+		try {
+			stats = fs.statSync(absolutePath);
+		} catch {
+			return {
+				relativePath,
+				purpose: "Could not read file.",
+				keyElements: [],
+				dependencies: [],
+			};
+		}
+
+		if (stats.size > maxFileSize) {
+			return {
+				relativePath,
+				purpose: `Large file (${(stats.size / 1024).toFixed(0)}KB), skipped for LLM summarization.`,
+				keyElements: [],
+				dependencies: [],
+			};
+		}
 
 		let content: string;
 		try {
@@ -401,17 +467,76 @@ export class ContextEngine {
 
 	// ─── Internal: file scanning ──────────────────────────────────────────────
 
-	/** Scan the workspace for indexable files (skip node_modules, .git, etc.). */
-	private async scanFiles(_root: string): Promise<string[]> {
-		const maxFiles = 200; // Cap to avoid overwhelming the LLM
+	/**
+	 * Scan the workspace for indexable files.
+	 * Respects .gitignore patterns from the workspace root.
+	 */
+	private async scanFiles(workspaceRoot: string): Promise<string[]> {
+		const maxFiles = 200;
+
+		// Build exclusion patterns from .gitignore + hard-coded defaults
+		const exclusions = this.buildExclusionPatterns(workspaceRoot);
+
+		const globPattern = exclusions.length > 0
+			? `{${exclusions.join(",")}}`
+			: undefined;
 
 		const allFiles = await vscode.workspace.findFiles(
 			"**/*.{ts,js,tsx,jsx,py,go,rs,md,json,yaml,yml,toml,cfg,ini,html,css}",
-			"{**/node_modules/**,**/.git/**,**/dist/**,**/out/**,**/build/**,**/*.lock,**/package-lock.json}",
+			globPattern,
 			maxFiles,
 		);
 
 		return allFiles.map((uri) => uri.fsPath);
+	}
+
+	/**
+	 * Build a list of glob exclusion patterns from .gitignore + hard-coded defaults.
+	 */
+	private buildExclusionPatterns(workspaceRoot: string): string[] {
+		// Hard-coded defaults (always excluded)
+		const defaults = [
+			"**/node_modules/**",
+			"**/.git/**",
+			"**/.cache/**",
+			"**/.venv/**",
+			"**/__pycache__/**",
+			"**/venv/**",
+			"**/env/**",
+			"**/dist/**",
+			"**/out/**",
+			"**/build/**",
+			"**/*.lock",
+			"**/package-lock.json",
+			"**/poetry.lock",
+			"**/Pipfile.lock",
+		];
+
+		// Try to parse .gitignore for additional patterns
+		const gitignorePath = path.join(workspaceRoot, ".gitignore");
+		try {
+			const content = fs.readFileSync(gitignorePath, "utf-8");
+			const patterns = content
+				.split("\n")
+				.map((line) => line.trim())
+				.filter((line) => line.length > 0 && !line.startsWith("#"))
+				.map((pattern) => {
+					// Convert .gitignore patterns to glob exclude patterns
+					// .gitignore uses "dir/" to mean "exclude this directory"
+					if (pattern.endsWith("/")) {
+						return `**/${pattern}**`;
+					}
+					// If it's a plain directory/file name, add wildcard prefix
+					if (!pattern.includes("/") && !pattern.includes("*")) {
+						return `**/${pattern}`;
+					}
+					// Already a path pattern
+					return `**/${pattern}`;
+				});
+			return [...defaults, ...patterns];
+		} catch {
+			return defaults;
+		}
 	}
 
 	// ─── Internal: regex-based extraction (fallback when LLM unavailable) ─────

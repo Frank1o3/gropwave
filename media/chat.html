@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>GropWave</title>
+	<link rel="stylesheet" href="chat.css" />
+</head>
+<body>
+	<div class="container">
+		<div class="model-bar">
+			<select id="modelSelect" title="Select model">
+				<option value="auto">Auto (Smart Routing)</option>
+			</select>
+			<span id="quotaStatus" class="quota-badge">&mdash;</span>
+		</div>
+		<div class="active-bar" id="activeBar">
+			<span id="activeContextDisplay">No file open</span>
+		</div>
+		<div class="chat-area" id="chatArea">
+			<div class="placeholder">GropWave AI Assistant<br/><br/>Type a message or use <code>/index</code>, <code>/help</code></div>
+		</div>
+		<div class="input-area">
+			<textarea id="chatInput" placeholder="Ask anything..." rows="1"></textarea>
+			<button id="sendBtn">Send</button>
+		</div>
+	</div>
+
+	<script src="chat.js"></script>
+</body>
+</html>
