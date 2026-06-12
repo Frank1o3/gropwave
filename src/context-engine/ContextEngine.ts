@@ -13,7 +13,6 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 import { OrchestratorConfig } from "../orchestrator";
-import { GroqClient } from "../orchestrator/GroqClient";
 
 // ─── File summary structure ──────────────────────────────────────────────────
 
